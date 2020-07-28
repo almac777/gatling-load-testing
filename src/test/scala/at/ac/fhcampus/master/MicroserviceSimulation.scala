@@ -10,14 +10,11 @@ import io.gatling.http.Predef._
 
 import scala.util.Random
 
-class MonolithSimulation extends Simulation {
-  val httpConf = http.baseUrl("http://35.158.120.226:8080")
+class MicroserviceSimulation extends Simulation {
+  val httpConf = http.baseUrl("http://3.121.159.210")
     .doNotTrackHeader("1")
 
   val gson = new Gson()
-
-  // current max => 3250
-  val USERS_AT_ONCE = 3250
 
   val feeder = Iterator.continually(Map(
     "RandomArticleUrl" -> randomArticleUrl,
@@ -34,7 +31,7 @@ class MonolithSimulation extends Simulation {
           session("RandomUserName").as[String],
           "$2a$08$BO53tsxv2nE3qhJ2o/4ehet9yM6.KwTXgVR17yvhjooXXahTDCBFu",
           fixedRoles()
-          )
+        )
         )))
         .check(status.is(200))
         .check(jsonPath("$..id").saveAs("userId"))
@@ -96,28 +93,16 @@ class MonolithSimulation extends Simulation {
   }
 
   val scn = scenario("Show all articles, click through some of them")
-    .feed(feeder)
-    .exec(CreateNewUser.execute).exitHereIfFailed
     .exec(http("show-one-article")
       .get("/api/v1/articles/1")
-      .basicAuth("${username}", "password")
+      .header("Authorization", "Bearer eyJhbGciOiJSUzI1NiIsInR5cCI6IkpXVCJ9.eyJhdWQiOlsicmVzb3VyY2Utc2VydmVyLXJlc3QtYXBpIl0sInVzZXJfbmFtZSI6InVzZXIiLCJzY29wZSI6WyJyZWFkIl0sImV4cCI6MTU5NTk3MzIzMSwiYXV0aG9yaXRpZXMiOlsiVVNFUiJdLCJqdGkiOiJhNzY5NTI1MC1jYTdmLTRjYTEtYWUyMy03ZjFmZDdhYzhhY2IiLCJjbGllbnRfaWQiOiJvYXV0aDItY2xpZW50In0.kBv3E5C5hql9BrCo6-E_TOJ1lwuXHm-xJWKH1UQdsg-mZM1Z2tDsSg2_DtJP5ccZYtoUZizS2zmj3Mu_kPUfXbMqat4ZAw3xjQblRdP1qZSZMZRgS6yrvhHSirP_SeypfirYm4kLJ44arvjjmsPCKjTf2957XhOgCBJ6T-tVAFOcIwOqPO8KUyIwPX4oJA0QAoXkgB4G-GQRmJOmj9lhgKVnErIBUWhc0tTAm4cqwp4ABwJ7_3LP9EfamoSqHzpOdV5w5ejrCKucvPlMlWSBgAq23iwhA53SUy9bhJvixV2nMwjSGira9FwS-2-8rcrFcM-8VHSWMFnsA1trEVN2mQ")
+      .header("Content-Type", "application/json")
     ).pause(1)
-    .exec(http("show-another-article")
-      .get("/api/v1/articles/2")
-      .basicAuth("${username}", "password")
-    ).pause(1)
-    .exec(
-      PostArticle.execute,
-      ReadPostedArticle.execute,
-      RatePostedArticle.execute,
-      DisplayAccumulatedRatingForNewArticle.execute,
-      RateArticleWithIdOne.execute,
-      DisplayAccumulatedRatingForArticleWithIdOne.execute
-    )
 
   setUp(
     scn.inject(
-      atOnceUsers(USERS_AT_ONCE)
+      atOnceUsers(3250)
+//      constantUsersPerSec(500) during(60)
     )
   ).protocols(httpConf)
 
