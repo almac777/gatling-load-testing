@@ -16,8 +16,8 @@ class MonolithSimulation extends Simulation {
 
   val gson = new Gson()
 
-  // current max => 3250
-  val USERS_AT_ONCE = 3250
+  val USERS_AT_ONCE = 100
+  val DURATION = 60
 
   val feeder = Iterator.continually(Map(
     "RandomArticleUrl" -> randomArticleUrl,
@@ -117,7 +117,7 @@ class MonolithSimulation extends Simulation {
 
   setUp(
     scn.inject(
-      atOnceUsers(USERS_AT_ONCE)
+      constantUsersPerSec(USERS_AT_ONCE) during(DURATION)
     )
   ).protocols(httpConf)
 

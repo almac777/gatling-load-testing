@@ -2,7 +2,7 @@ package at.ac.fhcampus.master
 
 import java.util
 
-import at.ac.fhcampus.master.dtos.{Rating, RegisterUser, User}
+import at.ac.fhcampus.master.dtos.{Rating, RegisterUser, SimpleRating, User}
 import com.google.gson.Gson
 import io.gatling.core.Predef._
 import io.gatling.core.body.StringBody
@@ -11,10 +11,13 @@ import io.gatling.http.Predef._
 import scala.util.Random
 
 class MicroserviceSimulation extends Simulation {
-  val httpConf = http.baseUrl("http://3.121.159.210")
+  val httpConf = http.baseUrl("http://18.185.144.9")
     .doNotTrackHeader("1")
 
   val gson = new Gson()
+
+  val CONSTANT_USERS_PER_SEC = 100
+  val TEST_DURATION = 60
 
   val feeder = Iterator.continually(Map(
     "RandomArticleUrl" -> randomArticleUrl,
@@ -24,7 +27,7 @@ class MicroserviceSimulation extends Simulation {
   object CreateNewUser {
     val execute = exec(
       http("Create A New User")
-        .post("/api/v1/users/registration/")
+        .post("/api/v1/users/register")
         .header("Content-Type", "application/json")
         .body(StringBody(session => gson.toJson(new RegisterUser(
           true, true, true, true,
@@ -39,12 +42,23 @@ class MicroserviceSimulation extends Simulation {
     )
   }
 
+  object LoginCreatedUser {
+    val execute = exec(http("Login created user")
+        .post("/api/v1/users/oauth/token?username=${RandomUserName}&password=password&grant_type=password")
+        .header("Content-Type", "application/x-www-form-urlencoded")
+        .check(status.is(200))
+        .check(jsonPath("$..token_type").is("bearer"))
+        .check(jsonPath("$..access_token").saveAs("AccessToken"))
+    )
+  }
+
   object PostArticle {
     val execute = exec(http("Post Article")
       .post("/api/v1/articles/")
       .header("Content-Type", "application/json")
       .body(StringBody(session => gson.toJson(new dtos.Article(null, session("RandomArticleUrl").as[String]))))
-      .basicAuth("${username}", "password")
+      .header("Authorization", "Bearer ${AccessToken}")
+      .header("Content-Type", "application/json")
       .check(jsonPath("$..id").saveAs("newArticleId"))
     )
   }
@@ -52,7 +66,8 @@ class MicroserviceSimulation extends Simulation {
   object ReadPostedArticle {
     val execute = exec(http("read-article-${newArticleId}")
       .get("/api/v1/articles/${newArticleId}")
-      .basicAuth("${username}", "password")
+      .header("Authorization", "Bearer ${AccessToken}")
+      .header("Content-Type", "application/json")
     )
   }
 
@@ -61,7 +76,8 @@ class MicroserviceSimulation extends Simulation {
       .post("/api/v1/ratings/")
       .header("Content-Type", "application/json")
       .body(StringBody(session => gson.toJson(randomRating(session("userId").as[Long], session("newArticleId").as[Long]))))
-      .basicAuth("${username}", "password")
+      .header("Authorization", "Bearer ${AccessToken}")
+      .header("Content-Type", "application/json")
       .check(status.is(200))
     )
   }
@@ -71,38 +87,58 @@ class MicroserviceSimulation extends Simulation {
       .post("/api/v1/ratings/")
       .header("Content-Type", "application/json")
       .body(StringBody(session => gson.toJson(randomRating(session("userId").as[Long], 1L))))
-      .basicAuth("${username}", "password")
+      .header("Authorization", "Bearer ${AccessToken}")
+      .header("Content-Type", "application/json")
       .check(status.is(200))
     )
   }
 
   object DisplayAccumulatedRatingForNewArticle {
     val execute = exec(http("accumulated-rating-article-${newArticleId}")
-      .get("/api/v1/ratings/accumulated/${newArticleId}")
-      .basicAuth("${username}", "password")
+      .get("/api/v1/accumulated-ratings/by-article/${newArticleId}")
+      .header("Authorization", "Bearer ${AccessToken}")
+      .header("Content-Type", "application/json")
       .check(status.is(200))
     )
   }
 
   object DisplayAccumulatedRatingForArticleWithIdOne {
     val execute = exec(http("accumulated-rating-article-with-id-one")
-      .get("/api/v1/ratings/accumulated/1")
-      .basicAuth("${username}", "password")
+      .get("/api/v1/accumulated-ratings/by-article/1")
+      .header("Authorization", "Bearer ${AccessToken}")
+      .header("Content-Type", "application/json")
       .check(status.is(200))
     )
   }
 
   val scn = scenario("Show all articles, click through some of them")
+    .feed(feeder)
+    .exec(
+      CreateNewUser.execute,
+      LoginCreatedUser.execute
+    ).exitHereIfFailed
     .exec(http("show-one-article")
       .get("/api/v1/articles/1")
-      .header("Authorization", "Bearer eyJhbGciOiJSUzI1NiIsInR5cCI6IkpXVCJ9.eyJhdWQiOlsicmVzb3VyY2Utc2VydmVyLXJlc3QtYXBpIl0sInVzZXJfbmFtZSI6InVzZXIiLCJzY29wZSI6WyJyZWFkIl0sImV4cCI6MTU5NTk3MzIzMSwiYXV0aG9yaXRpZXMiOlsiVVNFUiJdLCJqdGkiOiJhNzY5NTI1MC1jYTdmLTRjYTEtYWUyMy03ZjFmZDdhYzhhY2IiLCJjbGllbnRfaWQiOiJvYXV0aDItY2xpZW50In0.kBv3E5C5hql9BrCo6-E_TOJ1lwuXHm-xJWKH1UQdsg-mZM1Z2tDsSg2_DtJP5ccZYtoUZizS2zmj3Mu_kPUfXbMqat4ZAw3xjQblRdP1qZSZMZRgS6yrvhHSirP_SeypfirYm4kLJ44arvjjmsPCKjTf2957XhOgCBJ6T-tVAFOcIwOqPO8KUyIwPX4oJA0QAoXkgB4G-GQRmJOmj9lhgKVnErIBUWhc0tTAm4cqwp4ABwJ7_3LP9EfamoSqHzpOdV5w5ejrCKucvPlMlWSBgAq23iwhA53SUy9bhJvixV2nMwjSGira9FwS-2-8rcrFcM-8VHSWMFnsA1trEVN2mQ")
+      .header("Authorization", "Bearer ${AccessToken}")
       .header("Content-Type", "application/json")
     ).pause(1)
+    .exec(http("show-another-article")
+      .get("/api/v1/articles/2")
+      .header("Authorization", "Bearer ${AccessToken}")
+      .header("Content-Type", "application/json")
+    ).pause(1)
+    .exec(
+      PostArticle.execute,
+      ReadPostedArticle.execute,
+      RatePostedArticle.execute,
+      DisplayAccumulatedRatingForNewArticle.execute,
+      RateArticleWithIdOne.execute,
+      DisplayAccumulatedRatingForArticleWithIdOne.execute
+    )
 
   setUp(
     scn.inject(
-      atOnceUsers(3250)
-//      constantUsersPerSec(500) during(60)
+      constantUsersPerSec(CONSTANT_USERS_PER_SEC) during(TEST_DURATION)
     )
   ).protocols(httpConf)
 
@@ -110,11 +146,11 @@ class MicroserviceSimulation extends Simulation {
 
   def randomArticleUrl: String = "https://" + Random.alphanumeric.take(8).mkString + ".com/" + Random.alphanumeric.take(8).mkString + "/" + Random.alphanumeric.take(8).mkString + "/" + Random.alphanumeric.take(8).mkString + "/" + Random.alphanumeric.take(8).mkString + "/" + Random.alphanumeric.take(8).mkString + "/" + Random.alphanumeric.take(8).mkString + "/" + Random.alphanumeric.take(8).mkString + "/" + Random.alphanumeric.take(8).mkString + "/"
 
-  def randomRating(userId: Long, articleId: Long) = new Rating(
+  def randomRating(userId: Long, articleId: Long) = new SimpleRating(
     Random.nextInt(10) + 1,
     Random.nextInt(10) + 1,
-    new User(userId),
-    new dtos.Article(articleId, null)
+    userId,
+    articleId
   )
 
   def fixedRoles(): util.ArrayList[dtos.Role] = {
