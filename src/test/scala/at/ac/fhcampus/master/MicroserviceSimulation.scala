@@ -2,7 +2,7 @@ package at.ac.fhcampus.master
 
 import java.util
 
-import at.ac.fhcampus.master.dtos.{Rating, RegisterUser, SimpleRating, User}
+import at.ac.fhcampus.master.dtos.{RegisterUser, SimpleRating}
 import com.google.gson.Gson
 import io.gatling.core.Predef._
 import io.gatling.core.body.StringBody
@@ -44,11 +44,11 @@ class MicroserviceSimulation extends Simulation {
 
   object LoginCreatedUser {
     val execute = exec(http("Login created user")
-        .post("/api/v1/users/oauth/token?username=${RandomUserName}&password=password&grant_type=password")
-        .header("Content-Type", "application/x-www-form-urlencoded")
-        .check(status.is(200))
-        .check(jsonPath("$..token_type").is("Bearer"))
-        .check(jsonPath("$..access_token").saveAs("AccessToken"))
+      .post("/api/v1/users/oauth/token?username=${RandomUserName}&password=password&grant_type=password")
+      .header("Content-Type", "application/x-www-form-urlencoded")
+      .check(status.is(200))
+      .check(jsonPath("$..token_type").is("Bearer"))
+      .check(jsonPath("$..access_token").saveAs("AccessToken"))
     )
   }
 
@@ -113,9 +113,8 @@ class MicroserviceSimulation extends Simulation {
 
   val scn = scenario("Show all articles, click through some of them")
     .feed(feeder)
-    .exec(
-      CreateNewUser.execute.pause(2),
-    ).exitHereIfFailed
+    .exec(CreateNewUser.execute.pause(3).exitHereIfFailed).pause(1)
+    .exec(LoginCreatedUser.execute.pause(1).exitHereIfFailed).exitHereIfFailed
     .exec(http("show-one-article")
       .get("/api/v1/articles/1")
       .header("Authorization", "Bearer ${AccessToken}")
@@ -129,15 +128,19 @@ class MicroserviceSimulation extends Simulation {
     .exec(
       PostArticle.execute,
       ReadPostedArticle.execute,
+    ).pause(1)
+    .exec(
       RatePostedArticle.execute,
-      DisplayAccumulatedRatingForNewArticle.execute,
+      DisplayAccumulatedRatingForNewArticle.execute
+    ).pause(1)
+    .exec(
       RateArticleWithIdOne.execute,
       DisplayAccumulatedRatingForArticleWithIdOne.execute
     )
 
   setUp(
     scn.inject(
-      constantUsersPerSec(CONSTANT_USERS_PER_SEC) during(TEST_DURATION)
+      constantUsersPerSec(CONSTANT_USERS_PER_SEC) during (TEST_DURATION)
     )
   ).protocols(httpConf)
 

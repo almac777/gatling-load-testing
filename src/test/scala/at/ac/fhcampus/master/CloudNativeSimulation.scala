@@ -2,7 +2,7 @@ package at.ac.fhcampus.master
 
 import java.util
 
-import at.ac.fhcampus.master.dtos.{CloudNativeSimpleRating, RegisterUser, SimpleRating}
+import at.ac.fhcampus.master.dtos.CloudNativeSimpleRating
 import com.google.gson.Gson
 import io.gatling.core.Predef._
 import io.gatling.core.body.StringBody
@@ -25,12 +25,12 @@ class CloudNativeSimulation extends Simulation {
 
   object RetrieveOAuthToken {
     val execute = exec(http("Login created user")
-        .post("https://fh-campus-rating-app-auth.auth.eu-central-1.amazoncognito.com/oauth2/token?grant_type=client_credentials")
-        .header("Authorization", "Basic NXExcG5oYjNpaGFmNm00ZTRoYTJsYXAzZjI6cWkydTQxbXBodmI2YnVnaG0wZXA3cWdhNW5zbzgxc2M4ZTNxODgzMnZxMWx2YXFodTdy")
-        .header("Content-Type", "application/x-www-form-urlencoded")
-        .check(status.is(200))
-        .check(jsonPath("$..token_type").is("Bearer"))
-        .check(jsonPath("$..access_token").saveAs("AccessToken"))
+      .post("https://fh-campus-rating-app-auth.auth.eu-central-1.amazoncognito.com/oauth2/token?grant_type=client_credentials")
+      .header("Authorization", "Basic NXExcG5oYjNpaGFmNm00ZTRoYTJsYXAzZjI6cWkydTQxbXBodmI2YnVnaG0wZXA3cWdhNW5zbzgxc2M4ZTNxODgzMnZxMWx2YXFodTdy")
+      .header("Content-Type", "application/x-www-form-urlencoded")
+      .check(status.is(200))
+      .check(jsonPath("$..token_type").is("Bearer"))
+      .check(jsonPath("$..access_token").saveAs("AccessToken"))
     )
   }
 
@@ -81,8 +81,10 @@ class CloudNativeSimulation extends Simulation {
       .header("Authorization", "Bearer ${AccessToken}")
       .header("Content-Type", "application/json")
       .check(status.is(200))
+      .check(jsonPath("$..article_id").is("${newArticleId}"))
     )
   }
+
 
   object DisplayAccumulatedRatingForArticleWithIdOne {
     val execute = exec(http("accumulated-rating-article-with-id-one")
@@ -111,15 +113,18 @@ class CloudNativeSimulation extends Simulation {
     .exec(
       PostArticle.execute,
       ReadPostedArticle.execute,
+    ).pause(1)
+    .exec(
       RatePostedArticle.execute,
-      DisplayAccumulatedRatingForNewArticle.execute,
+      DisplayAccumulatedRatingForNewArticle.execute).pause(1)
+    .exec(
       RateArticleWithIdOne.execute,
       DisplayAccumulatedRatingForArticleWithIdOne.execute
     )
 
   setUp(
     scn.inject(
-      constantUsersPerSec(CONSTANT_USERS_PER_SEC) during(TEST_DURATION)
+      constantUsersPerSec(CONSTANT_USERS_PER_SEC) during (TEST_DURATION)
     )
   ).protocols(httpConf)
 
